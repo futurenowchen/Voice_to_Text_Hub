@@ -6,8 +6,8 @@ import time
 
 # [系統參數設定]
 st.set_page_config(page_title="戰術語音轉譯中樞", page_icon="🎙️", layout="centered")
-st.title("語音文本提取系統 v2.0 (批次突擊版)")
-st.markdown("### 系統狀態：待命\n支援批次部署音訊，系統將自動執行序列降熵打擊，並輸出接續文本。")
+st.title("語音文本提取系統 v3.0 (高能批次版)")
+st.markdown("### 系統狀態：待命\n全格式解鎖，序列批次處理，強制錨定高配額戰術引擎。")
 
 # [安全驗證與金鑰載入]
 api_key = st.secrets.get("GEMINI_API_KEY", "")
@@ -21,25 +21,24 @@ if api_key:
         # [戰場偵查] 獲取可用模型清單
         available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
         
-        # [自動校準邏輯]
+        # [強勢校準邏輯] 不論路徑前綴，強制捕捉具備 500 RPD 的 3.1 Lite
         target_model = ""
-        # 將 3.1 Flash Lite 移至首位，確保每日有 500 次彈藥
-        model_priority = [
-            "models/gemini-3.1-flash-lite",
-            "models/gemini-3.1-flash",
-            "models/gemini-2.5-flash",
-            "models/gemini-1.5-flash"
-        ]
-        for m in model_priority:
-            if m in available_models or f"models/{m}" in available_models:
-                target_model = m
-                break
+        priorities = ["3.1-flash-lite", "3.1-flash", "2.5-flash", "1.5-flash"]
+        
+        for keyword in priorities:
+            for m in available_models:
+                if keyword in m:
+                    target_model = m
+                    break
+            if target_model: break
+            
+        # 保底方案
         if not target_model and available_models:
             target_model = available_models[0]
 
         st.info(f"系統已鎖定戰術引擎：`{target_model}`")
         
-        # [戰術升級] 開啟 accept_multiple_files 實現批次上傳
+        # [前端解鎖] 撤除 type 限制擊穿 iOS 沙盒，開啟 accept_multiple_files
         uploaded_files = st.file_uploader(
             "部署音訊檔 (全格式解鎖，可一次選取多個檔案)", 
             type=None, 
@@ -47,6 +46,7 @@ if api_key:
         )
         
         if uploaded_files:
+            # 包含 iOS 自動轉碼的 mp4
             SUPPORTED_EXTS = ['m4a', 'mp3', 'wav', 'aac', 'ogg', 'flac', 'mp4']
             valid_files = []
             
@@ -56,11 +56,10 @@ if api_key:
                 if ext in SUPPORTED_EXTS:
                     valid_files.append(f)
                 else:
-                    st.warning(f"⚠️ 已排除非音訊格式：{f.name}")
+                    st.warning(f"⚠️ 攔截：已排除非預期格式 {f.name}")
             
             if valid_files and st.button(f"啟動批次轉譯協議 (共 {len(valid_files)} 個檔案)"):
                 
-                # 初始化進度條與總文本容器
                 progress_bar = st.progress(0)
                 status_text = st.empty()
                 total_files = len(valid_files)
@@ -89,7 +88,7 @@ if api_key:
                         prompt = "你是一個精確的逐字稿轉譯員。請分析此檔案內容，並完整轉換為繁體中文逐字稿。絕對不要添加任何額外的解釋、問候或總結。"
                         response = model.generate_content([prompt, audio_file])
                         
-                        # [文本縫合] 將結果附加至總文本，並標示來源錨點
+                        # [文本縫合]
                         master_transcript += f"### 【檔案：{file.name}】\n"
                         master_transcript += response.text.strip() + "\n\n---\n\n"
                         
@@ -97,10 +96,10 @@ if api_key:
                         genai.delete_file(audio_file.name)
                         os.unlink(tmp_path)
                         
-                        # 更新進度，並強制系統冷卻 2 秒，避免觸發 API 頻率紅線 (Rate Limit)
+                        # 步驟五：速率控制 (Rate Limit Control)
                         progress_bar.progress((index + 1) / total_files)
                         if index < total_files - 1:
-                            time.sleep(2) 
+                            time.sleep(2) # 強制冷卻，避免撞擊 RPM 紅線
                             
                     except Exception as e:
                         st.error(f"檔案 {file.name} 解析失敗：{str(e)}")
@@ -121,5 +120,7 @@ if api_key:
 
     except Exception as e:
         st.error(f"系統錯誤：{str(e)}")
+        with st.expander("展開偵錯日誌"):
+            st.write("目前 API 可視模型：", available_models if 'available_models' in locals() else "無法獲取清單")
 else:
     st.warning("警告：需配發 API 授權金鑰方可啟動核心模組。")
