@@ -23,7 +23,14 @@ if api_key:
         
         # [自動校準邏輯]
         target_model = ""
-        for m in ["models/gemini-1.5-flash-latest", "models/gemini-1.5-flash", "gemini-1.5-flash"]:
+        # 將 3.1 Flash Lite 移至首位，確保每日有 500 次彈藥
+        model_priority = [
+            "models/gemini-3.1-flash-lite",
+            "models/gemini-3.1-flash",
+            "models/gemini-2.5-flash",
+            "models/gemini-1.5-flash"
+        ]
+        for m in model_priority:
             if m in available_models or f"models/{m}" in available_models:
                 target_model = m
                 break
