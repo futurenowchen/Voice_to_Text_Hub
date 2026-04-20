@@ -40,7 +40,7 @@ if api_key:
                         audio_file = genai.get_file(audio_file.name)
                         
                     # 步驟三：執行精確提取
-                    model = genai.GenerativeModel('gemini-1.5-flash')
+                    model = genai.GenerativeModel(model_name='models/gemini-1.5-flash')
                     prompt = "你是一個精確的逐字稿轉譯員。請將此音訊完整轉換為繁體中文逐字稿。絕對不要添加任何額外的解釋、問候或總結，只需輸出原本的說話內容。"
                     response = model.generate_content([prompt, audio_file])
                     transcript = response.text
