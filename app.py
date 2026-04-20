@@ -31,7 +31,7 @@ if api_key:
 
         st.info(f"系統已鎖定戰術引擎：`{target_model}`")
         
-        uploaded_file = st.file_uploader("部署音訊檔 (.m4a, .mp3, .wav)", type=['m4a', 'mp3', 'wav'])
+        uploaded_file = st.file_uploader("部署音訊檔", type=['m4a', 'M4A', 'mp3', 'wav', 'aac'])
         
         if uploaded_file and st.button("啟動轉譯協議 (Execute)"):
             with st.spinner("執行降熵打擊中..."):
