@@ -21,13 +21,23 @@ if api_key:
         # [戰場偵查] 獲取可用模型清單
         available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
         
-        # [強勢校準邏輯] 不論路徑前綴，強制捕捉具備 500 RPD 的 3.1 Lite
+        # [強勢校準邏輯] 2026/05/25 轉場更新：優先捕捉正式版 (GA) 標識符
         target_model = ""
-        priorities = ["3.1-flash-lite", "3.1-flash", "2.5-flash", "1.5-flash"]
+        # 將具備 500 RPD 的正式版字串放在最優先位，確保不誤入即將失效的 preview 坑
+        priorities = [
+            "gemini-3.1-flash-lite",  # 正式版全名優先
+            "3.1-flash-lite",         # 關鍵字模糊捕捉
+            "3.1-flash", 
+            "2.5-flash"
+        ]
         
         for keyword in priorities:
             for m in available_models:
+                # 排除過時的 preview 字串，強制指向正式版
                 if keyword in m:
+                    # 如果關鍵字是帶有功能的，但我們要確保不是 preview，除非清單裡只剩 preview
+                    if "preview" in m and len(available_models) > 1:
+                        continue 
                     target_model = m
                     break
             if target_model: break
