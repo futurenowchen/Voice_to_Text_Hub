@@ -6,8 +6,8 @@ import time
 
 # [系統參數設定]
 st.set_page_config(page_title="戰術語音轉譯中樞", page_icon="🎙️", layout="centered")
-st.title("語音文本提取系統 v3.0 (高能批次版)")
-st.markdown("### 系統狀態：待命\n全格式解鎖，序列批次處理，強制錨定高配額戰術引擎。")
+st.title("語音文本提取系統 v3.1 (模型可選版)")
+st.markdown("### 系統狀態：待命\n全格式解鎖，序列批次處理，可依目前 API 權限選擇 Gemini 轉譯模型。")
 
 # [安全驗證與金鑰載入]
 api_key = st.secrets.get("GEMINI_API_KEY", "")
@@ -17,49 +17,75 @@ if not api_key:
 if api_key:
     try:
         genai.configure(api_key=api_key)
-        
-        # [戰場偵查] 獲取可用模型清單
-        available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        
-        # [強勢校準邏輯] 2026/05/25 轉場更新：優先捕捉正式版 (GA) 標識符
-        target_model = ""
-        # 將具備 500 RPD 的正式版字串放在最優先位，確保不誤入即將失效的 preview 坑
-        priorities = [
-            "gemini-3.1-flash-lite",  # 正式版全名優先
-            "3.1-flash-lite",         # 關鍵字模糊捕捉
-            "3.1-flash", 
-            "2.5-flash"
-        ]
-        
-        for keyword in priorities:
-            for m in available_models:
-                # 排除過時的 preview 字串，強制指向正式版
-                if keyword in m:
-                    # 如果關鍵字是帶有功能的，但我們要確保不是 preview，除非清單裡只剩 preview
-                    if "preview" in m and len(available_models) > 1:
-                        continue 
-                    target_model = m
-                    break
-            if target_model: break
-            
-        # 保底方案
-        if not target_model and available_models:
-            target_model = available_models[0]
 
-        st.info(f"系統已鎖定戰術引擎：`{target_model}`")
-        
+        # [模型偵查] 動態取得目前 API Key 可用且支援 generateContent 的模型
+        available_models = sorted(
+            m.name
+            for m in genai.list_models()
+            if 'generateContent' in m.supported_generation_methods
+        )
+
+        if not available_models:
+            raise RuntimeError("目前 API Key 找不到可用的 generateContent 模型。")
+
+        # 保留既有使用習慣：優先將 3.1 Flash Lite 設為預設值，但不再鎖死模型
+        priorities = [
+            "gemini-3.1-flash-lite",
+            "3.1-flash-lite",
+            "3.1-flash",
+            "2.5-flash",
+        ]
+
+        default_model = ""
+        for keyword in priorities:
+            stable_matches = [
+                model_name
+                for model_name in available_models
+                if keyword in model_name.lower() and "preview" not in model_name.lower()
+            ]
+            if stable_matches:
+                default_model = stable_matches[0]
+                break
+
+        # 若只有 preview 或新型號，仍從現有清單中選出合理預設值
+        if not default_model:
+            for keyword in priorities:
+                matches = [
+                    model_name
+                    for model_name in available_models
+                    if keyword in model_name.lower()
+                ]
+                if matches:
+                    default_model = matches[0]
+                    break
+
+        if not default_model:
+            default_model = available_models[0]
+
+        target_model = st.selectbox(
+            "選擇 Gemini 轉譯模型",
+            options=available_models,
+            index=available_models.index(default_model),
+            format_func=lambda model_name: model_name.removeprefix("models/"),
+            help="此清單會依目前 API Key 可使用且支援 generateContent 的模型動態更新。",
+        )
+
+        st.info(f"目前使用戰術引擎：`{target_model}`")
+        if "preview" in target_model.lower():
+            st.warning("目前選用的是 Preview 模型，Google 可能調整名稱、配額或可用期限。")
+
         # [前端解鎖] 撤除 type 限制擊穿 iOS 沙盒，開啟 accept_multiple_files
         uploaded_files = st.file_uploader(
-            "部署音訊檔 (全格式解鎖，可一次選取多個檔案)", 
-            type=None, 
+            "部署音訊檔 (全格式解鎖，可一次選取多個檔案)",
+            type=None,
             accept_multiple_files=True
         )
-        
+
         if uploaded_files:
             # 包含 iOS 自動轉碼的 mp4
             SUPPORTED_EXTS = ['m4a', 'mp3', 'wav', 'aac', 'ogg', 'flac', 'mp4']
             valid_files = []
-            
+
             # [前端防爆檢查] 過濾無效資產
             for f in uploaded_files:
                 ext = f.name.split('.')[-1].lower()
@@ -67,50 +93,50 @@ if api_key:
                     valid_files.append(f)
                 else:
                     st.warning(f"⚠️ 攔截：已排除非預期格式 {f.name}")
-            
+
             if valid_files and st.button(f"啟動批次轉譯協議 (共 {len(valid_files)} 個檔案)"):
-                
+
                 progress_bar = st.progress(0)
                 status_text = st.empty()
                 total_files = len(valid_files)
                 master_transcript = ""
-                
+
                 # [序列解析迴圈]
                 for index, file in enumerate(valid_files):
                     status_text.text(f"正在提取 ({index+1}/{total_files})：{file.name} ...")
-                    
+
                     try:
                         file_ext = file.name.split('.')[-1].lower()
                         # 步驟一：建立本地暫存檔
                         with tempfile.NamedTemporaryFile(delete=False, suffix=f'.{file_ext}') as tmp_file:
                             tmp_file.write(file.getvalue())
                             tmp_path = tmp_file.name
-                        
+
                         # 步驟二：拋轉至 Gemini 雲端
                         audio_file = genai.upload_file(path=tmp_path)
-                        
+
                         while audio_file.state.name == "PROCESSING":
                             time.sleep(1)
                             audio_file = genai.get_file(audio_file.name)
-                            
+
                         # 步驟三：執行精確提取
                         model = genai.GenerativeModel(model_name=target_model)
                         prompt = "你是一個精確的逐字稿轉譯員。請分析此檔案內容，並完整轉換為繁體中文逐字稿。絕對不要添加任何額外的解釋、問候或總結。"
                         response = model.generate_content([prompt, audio_file])
-                        
+
                         # [文本縫合]
                         master_transcript += f"### 【檔案：{file.name}】\n"
                         master_transcript += response.text.strip() + "\n\n---\n\n"
-                        
+
                         # 步驟四：防爆清理
                         genai.delete_file(audio_file.name)
                         os.unlink(tmp_path)
-                        
+
                         # 步驟五：速率控制 (Rate Limit Control)
                         progress_bar.progress((index + 1) / total_files)
                         if index < total_files - 1:
                             time.sleep(2) # 強制冷卻，避免撞擊 RPM 紅線
-                            
+
                     except Exception as e:
                         st.error(f"檔案 {file.name} 解析失敗：{str(e)}")
                         master_transcript += f"### 【檔案：{file.name}】\n[系統錯誤：無法解析此檔案]\n\n---\n\n"
@@ -118,9 +144,9 @@ if api_key:
                 # [輸出戰術成果]
                 status_text.text("序列轉譯完成。")
                 st.success(f"已成功縫合 {len(valid_files)} 個語音資產。")
-                
+
                 st.text_area("整合純文字文本", master_transcript, height=400)
-                
+
                 st.download_button(
                     label="下載整合文本 (.txt)",
                     data=master_transcript,
